@@ -22,8 +22,8 @@ Param(
   # x64 UEFI = 7
   # xEFIBC = 9
   [string]$Option60String = "PXEClient:Arch:00007:UNDI:003000",
-  [int]$ProcessorArchitecture  = 7
- 
+  [int]$ProcessorArchitecture  = 7,
+  [int]$DiscoverTimeout = 4
 )
  
 # Build a DHCPDISCOVER packet to send
@@ -332,8 +332,8 @@ Function Read-DhcpPacket( [Byte[]]$Packet )
 Function New-UdpSocket
 {
   Param(
-    [Int32]$SendTimeOut = 2,
-    [Int32]$ReceiveTimeOut = 2
+    [Int32]$SendTimeOut = 4,
+    [Int32]$ReceiveTimeOut = 4
   )
  
   $UdpSocket = New-Object Net.Sockets.Socket(
@@ -367,11 +367,11 @@ Function Remove-Socket
 # Main
 #
  
-# Create a Byte Array for the DHCPDISCOVER packet
+# Create a Byte Array for the DHCPDISCOVER packet - note that some IP Helpers do NOT fwd the request if the seconds lapse value is 0.
 $Message = New-DhcpDiscoverPacket -MacAddressString $MacAddressString -SecondsElapsed 4
  
 # Create a socket
-$UdpSocket = New-UdpSocket 
+$UdpSocket = New-UdpSocket -SendTimeOut $DiscoverTimeout -ReceiveTimeOut $DiscoverTimeout
 
 # UDP Port 68 (Server-to-Client port)
 $EndPoint = [Net.EndPoint]( New-Object Net.IPEndPoint($([Net.IPAddress]::Any, 68)))
