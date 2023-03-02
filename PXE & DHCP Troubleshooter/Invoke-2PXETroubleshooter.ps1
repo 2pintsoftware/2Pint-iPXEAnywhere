@@ -156,7 +156,7 @@ catch {
     Write-Result "iPXE Service not installed, skipping iPXE related checks" -LogLevel 2
 }
 
-if ($2PXEChecks) {
+if ($iPXEChecks) {
     [array]$port514 = Get-Process -Id (Get-NetUDPEndpoint -LocalPort 514).OwningProcess
     foreach ($port in $port514) {
         if ($port.Name -eq "iPXEAnywhere.Service") {
