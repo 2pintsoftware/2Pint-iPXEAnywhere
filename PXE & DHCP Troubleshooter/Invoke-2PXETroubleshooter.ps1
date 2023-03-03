@@ -126,11 +126,6 @@ if ($2PXEChecks) {
     else {
         Write-Result "$($port8050Process.Name) Service listening on port 8050" -LogLevel 3
     }
-
-    if ($2PXEStartTime) {
-        
-    }
-
 }
 
 $iPXEChecks = $false
@@ -328,6 +323,24 @@ if ($iPXEChecks) {
 }
 
 Write-Result "Checking for external issues"
+#Check that IIS SMS_DP_SMSPKG web app has enabled Anonymous Authentication
+$iissites = Get-Website
+foreach ($iissite in $iissites) {
+    $webapp = $null
+    $webapp = Get-WebApplication -Site $iissite.name -Name "SMS_DP_SMSPKG*"
+    if ($webapp) {
+        $webappvalue = (Get-WebConfigurationProperty -Filter "/system.webServer/security/authentication/anonymousAuthentication" -Name Enabled -PSPath "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/'))").Value
+        If ($webappvalue) {
+            Write-Result "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/')) Anonymous Authentication = Enabled"
+        }
+        else {
+            Write-Result "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/')) Anonymous Authentication = Disabled" -LogLevel 2
+            Write-Result "   - If using ConfigMgr with full PKI and not using a network access account this should be enabled" -LogLevel 2
+        }
+       
+    }
+}
+
 #Check WDSService
 try {
     $WDSService = Get-Service -Name "WDSServer" -ErrorAction Stop
