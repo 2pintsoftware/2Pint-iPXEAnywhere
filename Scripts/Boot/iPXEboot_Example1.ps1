@@ -37,10 +37,37 @@ enum NetworkGroupFlags
     DisableBranchCacheForiPXE = 512
 }
 
+<#
+# Uncomment this section to dump what is in the variables.
+# This will be triggered everytime a machine boot so be aware of file growth
+
+$Machine | ConvertTo-Json | Out-File C:\temp\ws\machine.txt -Append
+$RequestStatusInfo | ConvertTo-Json | Out-File C:\temp\ws\RequestStatusInfo.txt -Append
+$RequestNetworkInfo | ConvertTo-Json | Out-File C:\temp\ws\RequestNetworkInfo.txt -Append
+$Machineinformation | ConvertTo-Json | Out-File C:\temp\ws\Machineinformation.txt -Append
+$QueryParams | ConvertTo-Json | Out-File C:\temp\ws\QueryParams.txt -Append
+$PostParams | ConvertTo-Json | Out-File C:\temp\ws\PostParams.txt -Append
+$Paramdata | Out-File C:\temp\ws\Paramdata.txt -Append
+$DeployMachineKeyValues | ConvertTo-Json | Out-File C:\temp\ws\DeployMachineKeyValues.txt -Append
+$TargetMachineKeyValues | ConvertTo-Json | Out-File C:\temp\ws\TargetMachineKeyValues.txt -Append
+$DeployLocation | ConvertTo-Json | Out-File C:\temp\ws\DeployLocation.txt -Append
+$DeployNetworkGroup | ConvertTo-Json | Out-File C:\temp\ws\DeployNetworkGroup.txt -Append
+$DeployNetwork | ConvertTo-Json | Out-File C:\temp\ws\DeployNetwork.txt -Append
+$TargetLocation | ConvertTo-Json | Out-File C:\temp\ws\TargetLocation.txt -Append
+$TargetNetworkGroup | ConvertTo-Json | Out-File C:\temp\ws\TargetNetworkGroup.txt -Append
+$TargetNetwork | ConvertTo-Json | Out-File C:\temp\ws\TargetNetwork.txt -Append
+#>
+
 $BCEnabled = 0;
 #Detect and set dedicated peerhost
 #set peerhost 10.10.137.4
 $peerdedicatehost = "echo Using distributed cache";
+
+#Can be used to detect if we are switching URL
+if($RequestNetworkInfo.PXEURL -ne $PostParams.pxeurl)
+{
+
+}
 
 if($DeployNetworkGroup -ne $null)
 {
@@ -118,6 +145,7 @@ menu iPXE Anywhere build menu
 item --gap --          -------------------------------- Please choose an action           ------------------------  
 item --key m configmgr Build with ConfigMgr
 item --key l legacy    Build with legacy system
+item --key w switch    Switch environment
 item --key p psd       Build from cloud (PSD)
 item --gap --          --------------------------------                Advanced           ------------------------
 item --key d mdop      Boot to MDOP image
@@ -129,8 +157,14 @@ goto `${selected}
 
 
 :configmgr
-chain `${wsurl}/script?scriptname=configmgr/defaultconfigmgr.ps1##params=paramdata || shell
+chain -ar `${wsurl}/script?scriptname=configmgr/defaultconfigmgr.ps1##params=paramdata ||
+echo ended up back in ipxeboot.ps1
+prompt
+exit 1
 
+:switch
+chain `${wsurl}/script?scriptname=custom/switchtoprod.ps1##params=paramdata || shell
+goto start
 
 :legacy
 echo Not implemented
@@ -138,7 +172,7 @@ prompt
 goto start
 
 :psd
-chain `${wsurl}/script/path/motepath/psd.ps1##params=paramdata || shell
+chain `${wsurl}/script/script?scriptname=psd/psd.ps1##params=paramdata || shell
 
 goto start
 

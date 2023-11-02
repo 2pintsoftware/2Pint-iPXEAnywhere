@@ -16,6 +16,8 @@ param(
     $TargetNetwork
 )
 
+#This script will set custom background colours, skip the iPXE menu and go straight into the ConfigMgr menu
+
 $menu = @"
 #!ipxe
 #default section to set some key variable such as pictures etc.
@@ -40,7 +42,7 @@ cpair --foreground 6 3 ||
 #This calls the default param set named paramdata used in posts
 $Paramdata
 
-chain `${wsurl}/script?scriptname=configmgr/defaultconfigmgr.ps1##params=paramdata || shell
+chain -ar `${wsurl}/script?scriptname=configmgr/defaultconfigmgr.ps1##params=paramdata || shell
 
 "@
 return $menu

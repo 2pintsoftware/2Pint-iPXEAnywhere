@@ -16,21 +16,6 @@
     $TargetNetwork
 )
 
-#$DeployNetwork | ConvertTo-Json | Out-File C:\temp\ws\network.txt -Append
-#$Machine | ConvertTo-Json | Out-File C:\temp\ws\test.txt -Append
-#$QueryParams | ConvertTo-Json | Out-File "c:\temp\ws\QueryParams.txt"
-
-if($DeployNetwork.NetworkId.ToString() -eq "10.10.137.0")
-{
-    	$RequestStatusInfo.Approved = $true;
-		$RequestStatusInfo.ApprovedBy = "BuildCenter";
-		return $RequestStatusInfo
-}
-
-#One can return the request object approved directly from here
-#if($Machine.Id -eq 2)
-#	return $RequestStatusInfo;
-
 
 if($PostParams["authmethod"] -ne $null)
 {
@@ -42,18 +27,7 @@ if($PostParams["authmethod"] -ne $null)
 		return $RequestStatusInfo
 	}
 
-	#If not we let the default auth work its way bacck to show the menu again
-}
-
-if($PostParams["authmethod"] -eq "adurl")
-{
-    if($PostParams["authvalue"] -eq "ok")
-    {
-        $RequestStatusInfo.Approved = $true;
-        $RequestStatusInfo.ApprovedBy = "AD";
-        return $RequestStatusInfo
-    }
-    #If not we let the default auth work its way back to show the menu again
+	#If not we let the default auth work its way back to show the menu again
 }
 
 
@@ -68,8 +42,6 @@ $Paramdata
 :start
 menu iPXE Anywhere authentication menu
 item --gap --          -------------------------------- Please choose how to authenticate ------------------------  
-item --key q qr        Use a QR code
-item --key u user      Username and password
 item --key p pin       Use a pin
 item --key r retry     Retry request
 item --gap --          --------------------------------                Advanced           ------------------------
@@ -90,19 +62,6 @@ echo Type exit to return to menu
 shell
 goto start
 
-:qr
-echo Not implemented
-prompt
-goto start
-
-:user
-login || goto start
-imgfetch https://`${username:uristring}:`${password:uristring}@yourserver:6500/test.txt || goto start
-param --params paramdata authmethod adurl
-param --params paramdata authvalue ok
-chain `${pxeurl}/2PXE/boot##params=paramdata || shell
-goto start
-
 :pin
 echo -n Please provide a pin:
 read authvalue
@@ -118,6 +77,7 @@ goto start
 reboot
 
 :exit
+#This only works if the computer is set to always try PXE first and the drive is set as second. If drive is set to number one and using F12 to PXE-boot change this to "reboot" instead.
 exit 1
 
 "@

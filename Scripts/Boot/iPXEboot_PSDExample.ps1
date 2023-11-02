@@ -45,11 +45,14 @@ item
 item --key x exit      Exit and continue boot order
 choose --timeout 30000 --default exit selected || goto cancel
 goto `${selected}
+
 :psd
 chain `${wsurl}/script?scriptname=PSD/psd.ps1##params=paramdata || shell
 goto start
+
 :reboot
 reboot
+
 :exit
 exit 1
 "@
