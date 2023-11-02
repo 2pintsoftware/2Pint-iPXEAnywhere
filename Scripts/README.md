@@ -18,6 +18,7 @@ When referencing another script the path is always relative the _iPXE AnywhereWS
 The rest of the scripts are not required but example how to do different things with the 2Pint iPXE Webservice.
 
 So using explorer it should look like something like this:
+![image](https://github.com/2pintsoftware/2Pint-iPXEAnywhere/assets/15101419/8b77b344-4bbb-46c5-bb88-54a9cf2f78ab)
 
 
 For documentation regarding 2Pint iPXE Webservice:
