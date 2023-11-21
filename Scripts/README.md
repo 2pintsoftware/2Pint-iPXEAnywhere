@@ -5,7 +5,7 @@ The required scripts are the following (and must be in the correct subfolder):
 
 - Authentication\DeviceAuthentication.ps1
 - Boot\iPXEboot.ps1
-- Config\<All Scripts>
+- Config\ \<All Scripts>
 
 If using ConfigMgr the follwing is also recommended:
 - ConfigMgr\defaultconfigmgr.ps1
