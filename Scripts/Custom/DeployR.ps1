@@ -16,7 +16,7 @@ param(
     $TargetNetwork
 )
 
-$2pxeserver = 'https://server.company.com/2PXE/File/Boot/'
+$2pxeserver = 'https://server.company.com:8050/2PXE/File/Boot/'
 $deployrserver = 'https://server.company.com:7281/Content/Boot/'
 
 $menu = @"
