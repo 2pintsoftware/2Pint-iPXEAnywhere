@@ -392,10 +392,20 @@ if ($2PXEChecks) {
         
         $outEvents = $false
         if ($2PXEStartTime) {
-            $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = $2PXEStartTime }
+            try {
+                $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = $2PXEStartTime }
+            }
+            catch {
+                Write-Result "No 2PXE events in the '2PXE' event log since service start time" -LogLevel 2
+            }
         }
         else {
-            $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = (Get-Date).AddHours(-24) }
+            try {
+                $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = (Get-Date).AddHours(-24) }
+            }
+            catch {
+                Write-Result "No 2PXE events in the '2PXE' event log for the last 24 hours" -LogLevel 2
+            }
         }
         # Known safe warning messages that can be ignored (startup messages)
         $safeWarningPatterns = @(
@@ -438,10 +448,20 @@ if ($iPXEChecks) {
         
         $outEvents = $false
         if ($iPXEStartTime) {
-            $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = $iPXEStartTime }
+            try {
+                $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = $iPXEStartTime }
+            }
+            catch {
+                Write-Result "No iPXE events in the 'iPXE Anywhere WebService' event log since last service start time" -LogLevel 2
+            }
         }
         else {
-            $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = (Get-Date).AddHours(-24) }
+            try {
+                $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = (Get-Date).AddHours(-24) }
+            }
+            catch {
+                Write-Result "No iPXE events in the 'iPXE Anywhere WebService' event log for the last 24 hours" -LogLevel 2
+            }
         }
         $iPXEWarningCount = ($events.LevelDisplayName -eq "Warning").Count
         if ($iPXEWarningCount -eq 0) {
