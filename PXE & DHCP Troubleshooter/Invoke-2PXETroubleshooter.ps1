@@ -47,8 +47,11 @@ $procID = "Process IDs:"
 $URLGroups = "URL groups:"
 
 $2PXEChecks = $false
+$2PXEPortChecks = $false
+$2PXEStartTime = $null
 try {
     $2PXEService = Get-Service -Name "2PXE" -ErrorAction Stop
+    $2PXEStartTime = $2pxeProcess.StartTime
     Write-Result "2PXE Service Installed"
     if ($2PXEService.StartType -eq "Automatic") {
         Write-Result "   - 2PXE Startype = Automatic"
@@ -58,11 +61,13 @@ try {
     }
     if ($2PXEService.Status -eq "Running") {
         $2PXEChecks = $True
+        $2PXEPortChecks = $True
         Write-Result "   - 2PXE Status = Running"
     }
     else {
         Write-Result "   - 2PXE Status = $($2PXEService.Status)" -LogLevel 3
-        Write-Result "2PXE Service not started, skipping 2PXE related checks" -LogLevel 2
+        Write-Result "2PXE Service not started, skipping 2PXE port related checks" -LogLevel 2
+        $2PXEChecks = $True
     }
 }
 catch {
@@ -71,7 +76,7 @@ catch {
 
 
 
-if ($2PXEChecks) {
+if ($2PXEPortChecks) {
     try {
         $udpEndpoint67 = Get-NetUDPEndpoint -LocalPort 67 -ErrorAction Stop
         [array]$port67 = Get-Process -Id $udpEndpoint67.OwningProcess
@@ -125,7 +130,6 @@ if ($2PXEChecks) {
     $2pxeProcess = Get-Process -Name "2Pint.2pxe.Service" -ErrorAction SilentlyContinue
     if ($2pxeProcess) {
         $port8050Process = $2pxeProcess
-        $2PXEStartTime = $2pxeProcess.StartTime
         $2pxeHttpsPorts = @()
         foreach ($block in $netshblocks) {
             if ($block -match "HTTPS://") {
@@ -156,7 +160,9 @@ if ($2PXEChecks) {
     else {
         Write-Result "   - 2PXE Service process not found" -LogLevel 3
     }
+}
 
+if ($2PXEChecks) {
     # Check if the 2PintSoftware.com root certificate is in the Trusted Root store
     $2PintRootCert = Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object { $_.Issuer -match "2PintSoftware\.com" }
     if ($2PintRootCert) {
@@ -192,89 +198,95 @@ if ($2PXEChecks) {
         }
     }
 
-    # Verify that the certificate bound to 2PXE HTTPS port(s) is trusted by the 2Pint root certificate
-    $2pxeCertPorts = if ($2pxeHttpsPorts.Count -gt 0) { $2pxeHttpsPorts } else { @('8050') }
-    foreach ($2pxePort in $2pxeCertPorts) {
-        $sslCertOutput = netsh http show sslcert ipport=0.0.0.0:$2pxePort
-        $certHashMatch = [regex]::Match(($sslCertOutput -join "`n"), 'Certificate Hash\s*:\s*([0-9a-fA-F]+)')
-        if ($certHashMatch.Success) {
-            $boundCertHash = $certHashMatch.Groups[1].Value
-            Write-Result "   - SSL certificate bound to port $2pxePort (Hash: $boundCertHash)"
+    if ($2PXEPortChecks) {
+        # Verify that the certificate bound to 2PXE HTTPS port(s) is trusted by the 2Pint root certificate
+        $2pxeCertPorts = if ($2pxeHttpsPorts.Count -gt 0) { $2pxeHttpsPorts } else { @('8050') }
+        foreach ($2pxePort in $2pxeCertPorts) {
+            $sslCertOutput = netsh http show sslcert ipport=0.0.0.0:$2pxePort
+            $certHashMatch = [regex]::Match(($sslCertOutput -join "`n"), 'Certificate Hash\s*:\s*([0-9a-fA-F]+)')
+            if ($certHashMatch.Success) {
+                $boundCertHash = $certHashMatch.Groups[1].Value
+                Write-Result "   - SSL certificate bound to port $2pxePort (Hash: $boundCertHash)"
 
-            # Look up the bound certificate in the personal store
-            $boundCert = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { $_.Thumbprint -eq $boundCertHash }
-            if ($boundCert) {
-                if ($2PintRootCert) {
-                    # Build the certificate chain and check if the 2Pint root cert is in the chain
-                    $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
-                    $chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
-                    $chainBuilt = $chain.Build($boundCert)
-                    $trustedByRoot = $false
-                    foreach ($element in $chain.ChainElements) {
-                        if ($element.Certificate.Thumbprint -eq $2PintRootCert.Thumbprint) {
-                            $trustedByRoot = $true
-                            break
+                # Look up the bound certificate in the personal store
+                $boundCert = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { $_.Thumbprint -eq $boundCertHash }
+                if ($boundCert) {
+                    if ($2PintRootCert) {
+                        # Build the certificate chain and check if the 2Pint root cert is in the chain
+                        $chain = New-Object System.Security.Cryptography.X509Certificates.X509Chain
+                        $chain.ChainPolicy.RevocationMode = [System.Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
+                        $chainBuilt = $chain.Build($boundCert)
+                        $trustedByRoot = $false
+                        foreach ($element in $chain.ChainElements) {
+                            if ($element.Certificate.Thumbprint -eq $2PintRootCert.Thumbprint) {
+                                $trustedByRoot = $true
+                                break
+                            }
                         }
-                    }
-                    if ($trustedByRoot) {
-                        Write-Result "   - Port $2pxePort certificate is trusted by the 2Pint root certificate"
-                        Write-Result "   - Certificate Name: $($boundCert.Subject), Issuer: $($boundCert.Issuer), Expiration: $($boundCert.NotAfter)"
+                        if ($trustedByRoot) {
+                            Write-Result "   - Port $2pxePort certificate is trusted by the 2Pint root certificate"
+                            Write-Result "   - Certificate Name: $($boundCert.Subject), Issuer: $($boundCert.Issuer), Expiration: $($boundCert.NotAfter)"
+                        }
+                        else {
+                            Write-Result "   - Port $2pxePort certificate is NOT trusted by the 2Pint root certificate" -LogLevel 3
+                            if (-not $chainBuilt) {
+                                Write-Result "   - Certificate chain errors: $($chain.ChainStatus | ForEach-Object { $_.StatusInformation })" -LogLevel 3
+                            }
+                        }
                     }
                     else {
-                        Write-Result "   - Port $2pxePort certificate is NOT trusted by the 2Pint root certificate" -LogLevel 3
-                        if (-not $chainBuilt) {
-                            Write-Result "   - Certificate chain errors: $($chain.ChainStatus | ForEach-Object { $_.StatusInformation })" -LogLevel 3
-                        }
+                        Write-Result "   - Cannot verify trust chain for port $2pxePort, 2Pint root certificate not available" -LogLevel 2
                     }
                 }
                 else {
-                    Write-Result "   - Cannot verify trust chain for port $2pxePort, 2Pint root certificate not available" -LogLevel 2
+                    Write-Result "   - Could not find bound certificate for port $2pxePort in LocalMachine\My store" -LogLevel 3
                 }
             }
             else {
-                Write-Result "   - Could not find bound certificate for port $2pxePort in LocalMachine\My store" -LogLevel 3
+                Write-Result "   - No SSL certificate bound to port $2pxePort" -LogLevel 3
             }
         }
-        else {
-            Write-Result "   - No SSL certificate bound to port $2pxePort" -LogLevel 3
-        }
+
     }
-
 }
-
 $iPXEChecks = $false
+$iPXEPortChecks = $false
+$iPXEStartTime = $null
 try {
     $iPXEService = Get-Service -Name "iPXEWS" -ErrorAction Stop
-    Write-Result "iPXE Service Installed"
+    $iPXEStartTime = $iPXEProcess.StartTime
+    Write-Result "iPXE WS Service Installed"
     if ($iPXEService.StartType -eq "Automatic") {
-        Write-Result "   - iPXE Startype = Automatic"
+        Write-Result "   - iPXE WS Startype = Automatic"
     }
     else {
-        Write-Result "   - iPXE Startype = $($iPXEService.StartType), should be Automatic" -LogLevel 2
+        Write-Result "   - iPXE WS Startype = $($iPXEService.StartType), should be Automatic" -LogLevel 2
     }
     if ($iPXEService.Status -eq "Running") {
         $iPXEChecks = $True
-        Write-Result "   - iPXE Status = Running"
+        $iPXEPortChecks = $True
+        Write-Result "   - iPXE WS Status = Running"
     }
     else {
-        Write-Result "   - iPXE Status = $($iPXEService.Status)" -LogLevel 3
-        Write-Result "iPXE Service not started, skipping 2PXE related checks" -LogLevel 2
+        Write-Result "   - iPXE WS Status = $($iPXEService.Status)" -LogLevel 3
+        $iPXEChecks = $True
+        Write-Result "iPXE WS Service not started, skipping iPXE WS related checks" -LogLevel 2
     }
 }
 catch {
-    Write-Result "iPXE Service not installed, skipping iPXE related checks" -LogLevel 2
+    Write-Result "iPXE WS Service not installed, skipping iPXE WS related checks" -LogLevel 2
 }
 
-if ($iPXEChecks) {
+if ($iPXEPortChecks) {
     try {
         $udpEndpoint514 = Get-NetUDPEndpoint -LocalPort 514 -ErrorAction Stop
         [array]$port514 = Get-Process -Id $udpEndpoint514.OwningProcess
         foreach ($port in $port514) {
             if ($port.Name -eq "iPXEAnywhere.Service") {
-                Write-Result "   - iPXE Service listening on port 514 (SYSLOG)"
+                Write-Result "   - iPXE WS Service listening on port 514 (SYSLOG)"
             }
             else {
-                Write-Result "$($port.Name) listening on port 514 instead of iPXE" -LogLevel 3
+                Write-Result "$($port.Name) listening on port 514 instead of iPXE WS" -LogLevel 3
             }
         }
     }
@@ -282,11 +294,10 @@ if ($iPXEChecks) {
         Write-Result "   - Nothing listening on UDP port 514 (SYSLOG)" -LogLevel 2
     }
 
-    #Get process from http.sys - find what HTTPS ports the iPXE service is listening on
+    #Get process from http.sys - find what HTTPS ports the iPXE WS service is listening on
     $iPXEProcess = Get-Process -Name "iPXEAnywhere.Service" -ErrorAction SilentlyContinue
     $iPXEHttpsPorts = @()
     if ($iPXEProcess) {
-        $iPXEStartTime = $iPXEProcess.StartTime
         foreach ($block in $netshblocks) {
             if ($block -match "HTTPS://") {
                 $pidMatch = [regex]::Match($block, "$procID(.*?)$URLGroups")
@@ -302,22 +313,22 @@ if ($iPXEChecks) {
             $nonDefault = $iPXEHttpsPorts | Where-Object { $_ -notin $defaultiPXEPorts }
             foreach ($dp in $defaultiPXEPorts) {
                 if ($dp -in $iPXEHttpsPorts) {
-                    Write-Result "   - iPXE Service listening on default HTTPS port $dp"
+                    Write-Result "   - iPXE WS Service listening on default HTTPS port $dp"
                 }
                 else {
-                    Write-Result "   - iPXE Service NOT listening on default HTTPS port $dp" -LogLevel 2
+                    Write-Result "   - iPXE WS Service NOT listening on default HTTPS port $dp" -LogLevel 2
                 }
             }
             if ($nonDefault) {
-                Write-Result "   - iPXE Service also listening on non-default HTTPS port(s): $($nonDefault -join ', ')" -LogLevel 2
+                Write-Result "   - iPXE WS Service also listening on non-default HTTPS port(s): $($nonDefault -join ', ')" -LogLevel 2
             }
         }
         else {
-            Write-Result "   - iPXE Service is running but not found on any HTTPS port in http.sys" -LogLevel 2
+            Write-Result "   - iPXE WS Service is running but not found on any HTTPS port in http.sys" -LogLevel 2
         }
     }
     else {
-        Write-Result "   - iPXE Service process not found" -LogLevel 3
+        Write-Result "   - iPXE WS Service process not found" -LogLevel 3
     }
 
     # Check if the 2PintSoftware.com root certificate is available for iPXE trust verification
@@ -374,14 +385,18 @@ if ($iPXEChecks) {
     }
 }
 
-if ($2PXEChecks -and $2PXEStartTime) {
+if ($2PXEChecks) {
     if ([System.Diagnostics.EventLog]::Exists('2PXE')) {
         Write-Result "2PXE Eventlog Exists"
-        Write-Result "2PXE Eventlog, checking events created after $2PXEStartTime"
+        Write-Result "2PXE Eventlog, checking events last 24 hours"
         
         $outEvents = $false
-        $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = $2PXEStartTime }
-
+        if ($2PXEStartTime) {
+            $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = $2PXEStartTime }
+        }
+        else {
+            $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = (Get-Date).AddHours(-24) }
+        }
         # Known safe warning messages that can be ignored (startup messages)
         $safeWarningPatterns = @(
             'EFI file does not exist:.*autoexec\.ipxe',
@@ -416,13 +431,18 @@ if ($2PXEChecks -and $2PXEStartTime) {
     }
 }
 
-if ($iPXEChecks -and $iPXEStartTime) {
+if ($iPXEChecks) {
     if ([System.Diagnostics.EventLog]::Exists('iPXE Anywhere WebService')) {
         Write-Result "iPXE Eventlog Exists"
-        Write-Result "iPXE Eventlog, checking events created after $iPXEStartTime"
+        Write-Result "iPXE Eventlog, checking events last 24 hours"
         
         $outEvents = $false
-        $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = $iPXEStartTime }
+        if ($iPXEStartTime) {
+            $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = $iPXEStartTime }
+        }
+        else {
+            $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = (Get-Date).AddHours(-24) }
+        }
         $iPXEWarningCount = ($events.LevelDisplayName -eq "Warning").Count
         if ($iPXEWarningCount -eq 0) {
             Write-Result "   - iPXE EventLog, No Warnings"
@@ -452,7 +472,7 @@ if ($2PXEChecks) {
     try {
         $2PXEFirewallRule67 = Get-NetFirewallRule -DisplayName "2Pint Software 2PXE - DHCP Udp Ports:67" -ErrorAction stop
         Write-Result "   - 2PXE Firewall rule for DHCP UDP port 67"
-        if ($port8050Process) {
+        if ($port8050Process -and $2PXEPortChecks) {
             if ($(($2PXEFirewallRule67 | Get-NetFirewallApplicationFilter).Program) -eq $port8050Process.Path) {
                 Write-Result "   - 2PXE Firewall rule path for DHCP UDP port 67"
             }
@@ -469,7 +489,7 @@ if ($2PXEChecks) {
     try {
         $2PXEFirewallRule69 = Get-NetFirewallRule -DisplayName "2Pint Software 2PXE - TFTP Udp Ports:69" -ErrorAction stop
         Write-Result "   - 2PXE Firewall rule for TFTP UDP port 69"
-        if ($port8050Process) {
+        if ($port8050Process -and $2PXEPortChecks) {
             if ($(($2PXEFirewallRule69 | Get-NetFirewallApplicationFilter).Program) -eq $port8050Process.Path) {
                 Write-Result "   - 2PXE Firewall rule path for TFTP UDP port 69"
             }
@@ -486,7 +506,7 @@ if ($2PXEChecks) {
     try {
         $2PXEFirewallRule4011 = Get-NetFirewallRule -DisplayName "2Pint Software 2PXE - PXE Udp Ports:4011" -ErrorAction stop
         Write-Result "   - 2PXE Firewall rule for PXE UDP port 4011"
-        if ($port8050Process) {
+        if ($port8050Process -and $2PXEPortChecks) {
             if ($(($2PXEFirewallRule4011 | Get-NetFirewallApplicationFilter).Program) -eq $port8050Process.Path) {
                 Write-Result "   - 2PXE Firewall rule path for PXE UDP port 4011"
             }
@@ -533,20 +553,20 @@ Write-Result "Checking for external issues"
 try {
     $iissites = Get-Website -ErrorAction Stop
     foreach ($iissite in $iissites) {
-    $webapp = $null
-    $webapp = Get-WebApplication -Site $iissite.name -Name "SMS_DP_SMSPKG*"
-    if ($webapp) {
-        $webappvalue = (Get-WebConfigurationProperty -Filter "/system.webServer/security/authentication/anonymousAuthentication" -Name Enabled -PSPath "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/'))").Value
-        If ($webappvalue) {
-            Write-Result "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/')) Anonymous Authentication = Enabled"
-        }
-        else {
-            Write-Result "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/')) Anonymous Authentication = Disabled" -LogLevel 2
-            Write-Result "   - If using ConfigMgr with full PKI and not using a network access account this should be enabled" -LogLevel 2
-        }
+        $webapp = $null
+        $webapp = Get-WebApplication -Site $iissite.name -Name "SMS_DP_SMSPKG*"
+        if ($webapp) {
+            $webappvalue = (Get-WebConfigurationProperty -Filter "/system.webServer/security/authentication/anonymousAuthentication" -Name Enabled -PSPath "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/'))").Value
+            If ($webappvalue) {
+                Write-Result "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/')) Anonymous Authentication = Enabled"
+            }
+            else {
+                Write-Result "IIS:\Sites\$($iissite.name)\$($webapp.path.Trim('/')) Anonymous Authentication = Disabled" -LogLevel 2
+                Write-Result "   - If using ConfigMgr with full PKI and not using a network access account this should be enabled" -LogLevel 2
+            }
        
+        }
     }
-}
 }
 catch {
     Write-Result "IIS not installed or WebAdministration module not available, skipping IIS checks" -LogLevel 1
