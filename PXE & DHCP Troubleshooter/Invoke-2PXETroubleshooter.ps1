@@ -3,13 +3,31 @@
   Invoke-2PXETroubleshooter.ps1
 
 .DESCRIPTION
-  Script to verify the installation of 2PXE/iPXE
+  Script to verify the installation and configuration of 2PXE/iPXE Anywhere.
+  Performs the following checks:
+  - 2PXE service installation, start type, and running status
+  - 2PXE UDP port listeners (67, 69, 4011)
+  - 2PXE HTTPS port detection via http.sys
+  - 2Pint root certificate presence in Trusted Root store (with optional install)
+  - SSL certificate bindings and trust chain validation for 2PXE ports
+  - iPXE Anywhere WebService installation, start type, and running status
+  - iPXE WS UDP port 514 (SYSLOG) listener
+  - iPXE WS HTTPS port detection via http.sys (8051, 8052)
+  - SSL certificate bindings and trust chain validation for iPXE ports
+  - 2PXE and iPXE event logs for errors and warnings (last 48 hours or since service start)
+  - Exports event log issues to text files in the script directory
+  - Firewall rules for 2PXE (ports 67, 69, 4011, 8050) and iPXE (ports 8051, 8052)
+  - IIS SMS_DP_SMSPKG web application anonymous authentication setting
+  - WDS service status (should be disabled or not installed)
+  - SccmPxe service status (should be disabled or not installed)
 
 .NOTES
-  Version:        1.0
+  Version:        1.1
   Author:         MB @ 2Pint Software
   Creation Date:  2023-02-27
   Purpose/Change: Initial script development
+    - 2024-06-26 - Updated to check for any HTTPS ports the services are listening on instead of just default ports
+                 - Verify SSL certificates bound to 2PXE/iPXE HTTPS ports and their trust chain to the 2Pint root certificate
 
 .EXAMPLE
     Invoke-2PXETroubleshooter.ps1
@@ -17,6 +35,8 @@
 #>
 #Requires -RunAsAdministrator
 
+# Determine script directory (works in PS 5.1 and later, even if $PSScriptRoot is empty)
+$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Definition }
 
 Function Write-Result {
     param (
@@ -388,7 +408,7 @@ if ($iPXEPortChecks) {
 if ($2PXEChecks) {
     if ([System.Diagnostics.EventLog]::Exists('2PXE')) {
         Write-Result "2PXE Eventlog Exists"
-        Write-Result "2PXE Eventlog, checking events last 24 hours"
+        Write-Result "2PXE Eventlog, checking events last 48 hours"
         
         $outEvents = $false
         if ($2PXEStartTime) {
@@ -401,42 +421,45 @@ if ($2PXEChecks) {
         }
         else {
             try {
-                $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = (Get-Date).AddHours(-24) }
+                $events = Get-WinEvent -FilterHashtable @{LogName = '2PXE'; StartTime = (Get-Date).AddHours(-48) } -ErrorAction Stop
             }
             catch {
-                Write-Result "No 2PXE events in the '2PXE' event log for the last 24 hours" -LogLevel 2
+                Write-Result "No 2PXE events in the '2PXE' event log for the last 48 hours" -LogLevel 2
             }
         }
-        # Known safe warning messages that can be ignored (startup messages)
-        $safeWarningPatterns = @(
-            'EFI file does not exist:.*autoexec\.ipxe',
-            'TFTP now serves:.* from memory stream of:\d+ bytes',
-            'Reading EFI file from DISK:'
-        )
-        $safeWarningRegex = ($safeWarningPatterns | ForEach-Object { "($_)" }) -join '|'
+        if ($events) {
+            # Known safe warning messages that can be ignored (startup messages)
+            $safeWarningPatterns = @(
+                'EFI file does not exist:.*autoexec\.ipxe',
+                'TFTP now serves:.* from memory stream of:\d+ bytes',
+                'Reading EFI file from DISK:'
+            )
+            $safeWarningRegex = ($safeWarningPatterns | ForEach-Object { "($_)" }) -join '|'
 
-        $allWarnings = $events | Where-Object { $_.LevelDisplayName -eq "Warning" }
-        $actionableWarnings = $allWarnings | Where-Object { $_.Message -notmatch $safeWarningRegex }
-        if ($actionableWarnings.Count -eq 0) {
-            Write-Result "   - 2PXE EventLog, No Warnings"
-        }
-        else {
-            $outEvents = $true
-            Write-Result "   - 2PXE EventLog, $($actionableWarnings.Count) Warning(s) found" -LogLevel 2
-        }
-        $2PXEErrorCount = ($events.LevelDisplayName -eq "Error").Count
-        if ($2PXEErrorCount -eq 0) {
-            Write-Result "   - 2PXE EventLog, No Errors"
-        }
-        else {
-            $outEvents = $true
-            Write-Result "   - 2PXE EventLog, Errors found" -LogLevel 3
+            $allWarnings = $events | Where-Object { $_.LevelDisplayName -eq "Warning" }
+            $actionableWarnings = $allWarnings | Where-Object { $_.Message -notmatch $safeWarningRegex }
+            if ($actionableWarnings.Count -eq 0) {
+                Write-Result "   - 2PXE EventLog, No Warnings"
+            }
+            else {
+                $outEvents = $true
+                Write-Result "   - 2PXE EventLog, $($actionableWarnings.Count) Warning(s) found" -LogLevel 2
+            }
+            $2PXEErrorCount = ($events.LevelDisplayName -eq "Error").Count
+            if ($2PXEErrorCount -eq 0) {
+                Write-Result "   - 2PXE EventLog, No Errors"
+            }
+            else {
+                $outEvents = $true
+                Write-Result "   - 2PXE EventLog, Errors found" -LogLevel 3
             
-        }
-        if ($outEvents) {
-            # Exclude safe warnings from the grid view output
-            $issueEvents = $events | Where-Object { (1, 2, 3 -contains $_.Level) -and ($_.LevelDisplayName -ne "Warning" -or $_.Message -notmatch $safeWarningRegex) }
-            $issueEvents | Out-GridView -Title "2PXE Event issues"
+            }
+            if ($outEvents) {
+                # Exclude safe warnings from the output
+                $issueEvents = $events | Where-Object { (1, 2, 3 -contains $_.Level) -and ($_.LevelDisplayName -ne "Warning" -or $_.Message -notmatch $safeWarningRegex) }
+                $2PXEEventLogFile = Join-Path $ScriptDir "2PXE_EventIssues.txt"
+                $issueEvents | Format-Table -AutoSize -Wrap TimeCreated, LevelDisplayName, Id, Message | Out-String | Out-File -FilePath $2PXEEventLogFile -Encoding UTF8
+            }
         }
     }
 }
@@ -444,7 +467,7 @@ if ($2PXEChecks) {
 if ($iPXEChecks) {
     if ([System.Diagnostics.EventLog]::Exists('iPXE Anywhere WebService')) {
         Write-Result "iPXE Eventlog Exists"
-        Write-Result "iPXE Eventlog, checking events last 24 hours"
+        Write-Result "iPXE Eventlog, checking events last 48 hours"
         
         $outEvents = $false
         if ($iPXEStartTime) {
@@ -457,31 +480,34 @@ if ($iPXEChecks) {
         }
         else {
             try {
-                $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = (Get-Date).AddHours(-24) }
+                $events = Get-WinEvent -FilterHashtable @{LogName = 'iPXE Anywhere WebService'; StartTime = (Get-Date).AddHours(-48) } -ErrorAction Stop
             }
             catch {
-                Write-Result "No iPXE events in the 'iPXE Anywhere WebService' event log for the last 24 hours" -LogLevel 2
+                Write-Result "No iPXE events in the 'iPXE Anywhere WebService' event log for the last 48 hours" -LogLevel 2
             }
         }
-        $iPXEWarningCount = ($events.LevelDisplayName -eq "Warning").Count
-        if ($iPXEWarningCount -eq 0) {
-            Write-Result "   - iPXE EventLog, No Warnings"
-        }
-        else {
-            $outEvents = $true
-            Write-Result "   - iPXE EventLog, Warnings found" -LogLevel 2
-        }
-        $2PXEErrorCount = ($events.LevelDisplayName -eq "Error").Count
-        if ($2PXEErrorCount -eq 0) {
-            Write-Result "   - iPXE EventLog, No Errors"
-        }
-        else {
-            $outEvents = $true
-            Write-Result "   - iPXE EventLog, Errors found" -LogLevel 3
+        if ($events) {
+            $iPXEWarningCount = ($events.LevelDisplayName -eq "Warning").Count
+            if ($iPXEWarningCount -eq 0) {
+                Write-Result "   - iPXE EventLog, No Warnings"
+            }
+            else {
+                $outEvents = $true
+                Write-Result "   - iPXE EventLog, Warnings found" -LogLevel 2
+            }
+            $2PXEErrorCount = ($events.LevelDisplayName -eq "Error").Count
+            if ($2PXEErrorCount -eq 0) {
+                Write-Result "   - iPXE EventLog, No Errors"
+            }
+            else {
+                $outEvents = $true
+                Write-Result "   - iPXE EventLog, Errors found" -LogLevel 3
             
-        }
-        if ($outEvents) {
-            $events | Where-Object { 1, 2, 3 -contains $_.Level } | Out-GridView -Title "iPXE Event issues"
+            }
+            if ($outEvents) {
+                $iPXEEventLogFile = Join-Path $ScriptDir "iPXE_EventIssues.txt"
+                $events | Where-Object { 1, 2, 3 -contains $_.Level } | Format-Table -AutoSize -Wrap TimeCreated, LevelDisplayName, Id, Message | Out-String | Out-File -FilePath $iPXEEventLogFile -Encoding UTF8
+            }
         }
     }
 }
@@ -634,4 +660,13 @@ try {
 }
 catch {
     Write-Result "SccmPxe Service not installed"
+}
+Write-host ""
+
+if($2PXEEventLogFile){
+    Write-Result "2PXE Event Log Issues exported to: $2PXEEventLogFile" -LogLevel 2
+}
+
+if($iPXEEventLogFile){
+    Write-Result "iPXE Event Log Issues exported to: $iPXEEventLogFile" -LogLevel 2
 }
