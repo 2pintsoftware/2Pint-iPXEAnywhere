@@ -11,7 +11,7 @@
   - 2Pint root certificate presence in Trusted Root store (with optional install)
   - SSL certificate bindings and trust chain validation for 2PXE ports
   - iPXE Anywhere WebService installation, start type, and running status
-  - iPXE WS UDP port 514 (SYSLOG) listener
+  - iPXE WS UDP port 516 (SYSLOG) listener
   - iPXE WS HTTPS port detection via http.sys (8051, 8052)
   - SSL certificate bindings and trust chain validation for iPXE ports
   - 2PXE and iPXE event logs for errors and warnings (last 48 hours or since service start)
@@ -299,19 +299,19 @@ catch {
 
 if ($iPXEPortChecks) {
     try {
-        $udpEndpoint514 = Get-NetUDPEndpoint -LocalPort 514 -ErrorAction Stop
-        [array]$port514 = Get-Process -Id $udpEndpoint514.OwningProcess
-        foreach ($port in $port514) {
+        $udpEndpoint516 = Get-NetUDPEndpoint -LocalPort 516 -ErrorAction Stop
+        [array]$port516 = Get-Process -Id $udpEndpoint516.OwningProcess
+        foreach ($port in $port516) {
             if ($port.Name -eq "iPXEAnywhere.Service") {
-                Write-Result "   - iPXE WS Service listening on port 514 (SYSLOG)"
+                Write-Result "   - iPXE WS Service listening on port 516 (SYSLOG)"
             }
             else {
-                Write-Result "$($port.Name) listening on port 514 instead of iPXE WS" -LogLevel 3
+                Write-Result "$($port.Name) listening on port 516 instead of iPXE WS" -LogLevel 3
             }
         }
     }
     catch {
-        Write-Result "   - Nothing listening on UDP port 514 (SYSLOG)" -LogLevel 2
+        Write-Result "   - Nothing listening on UDP port 516 (SYSLOG)" -LogLevel 1
     }
 
     #Get process from http.sys - find what HTTPS ports the iPXE WS service is listening on
