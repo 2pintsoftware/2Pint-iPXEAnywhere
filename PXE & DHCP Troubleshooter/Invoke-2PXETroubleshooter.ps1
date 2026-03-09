@@ -629,71 +629,43 @@ catch {
 
 #Check SSL Cipher availability for iPXE
 $cipherNames = @(
-    "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"
+    "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384",
+    "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256",
+    "TLS_RSA_WITH_AES_256_GCM_SHA384",
+    "TLS_RSA_WITH_AES_128_GCM_SHA256",
+    "TLS_DHE_RSA_WITH_AES_256_CBC_SHA256",
+    "TLS_DHE_RSA_WITH_AES_128_CBC_SHA256",
+    "TLS_RSA_WITH_AES_256_CBC_SHA256",
+    "TLS_RSA_WITH_AES_128_CBC_SHA256",
+    "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
+    "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
+    "TLS_RSA_WITH_AES_256_CBC_SHA",
+    "TLS_RSA_WITH_AES_128_CBC_SHA",
+    "TLS_RSA_WITH_NULL_SHA",   
+    "TLS_RSA_WITH_NULL_MD5"
 )
 
 $cipherFound = $false
 try {
-    # Get supported ciphers on this OS
-     $arrayCiphers = Get-TlsCipherSuite -ErrorAction Stop
-     $supportedCiphers = @($arrayCiphers.Name)
+    # Get currently enabled ciphers
+    $enabledCiphers = @((Get-TlsCipherSuite -ErrorAction Stop).Name)
     
-    if ($supportedCiphers.Count -eq 0) {
-        Write-Result "Unable to retrieve supported ciphers using Get-TlsCipherSuite, falling back to registry check" -LogLevel 2
-        # Fall back to registry checking
-        foreach ($cipherName in $cipherNames) {
-            $cipherPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$cipherName"
-            
-            if (Test-Path $cipherPath) {
-                $cipherEnabled = (Get-ItemProperty -Path $cipherPath -Name "Enabled" -ErrorAction SilentlyContinue).Enabled
-                if ($null -eq $cipherEnabled -or $cipherEnabled -eq 0xffffffff -or $cipherEnabled -eq 1) {
-                    Write-Result "SSL Cipher $cipherName is enabled"
-                    $cipherFound = $true
-                    break
-                }
-                else {
-                    Write-Result "SSL Cipher $cipherName is disabled" -LogLevel 2
-                }
-            }
-        }
-        if (-not $cipherFound) {
-            Write-Result "No compatible SSL ciphers are enabled for iPXE" -LogLevel 2
-            Write-Result "   - Recommended: Enable $($cipherNames[0]) for proper iPXE operation" -LogLevel 2
+    # Check if any compatible cipher is enabled (starting with most secure)
+    foreach ($cipherName in $cipherNames) {
+        if ($cipherName -in $enabledCiphers) {
+            Write-Result "SSL Cipher compatible with iPXE is enabled: $cipherName"
+            $cipherFound = $true
+            break
         }
     }
-    else {
-        # Check each cipher against supported list
-        foreach ($cipherName in $cipherNames) {
-            if ($cipherName -in $supportedCiphers) {
-                # Cipher is supported, now check if it's explicitly disabled in registry
-                $cipherPath = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$cipherName"
-                
-                if (Test-Path $cipherPath) {
-                    $cipherEnabled = (Get-ItemProperty -Path $cipherPath -Name "Enabled" -ErrorAction SilentlyContinue).Enabled
-                    if ($cipherEnabled -eq 0) {
-                        Write-Result "SSL Cipher $cipherName is supported but explicitly disabled" -LogLevel 2
-                        continue
-                    }
-                }
-                
-                # Cipher is supported and enabled (or enabled by default)
-                Write-Result "SSL Cipher $cipherName is enabled"
-                $cipherFound = $true
-                break
-            }
-            else {
-                Write-Result "SSL Cipher $cipherName is not supported on this OS version" -LogLevel 2
-            }
-        }
-        
-        if (-not $cipherFound) {
-            Write-Result "No compatible SSL ciphers are available for iPXE" -LogLevel 2
-            Write-Result "   - Recommended: Update Windows Server or enable $($cipherNames[0]) if available" -LogLevel 2
-        }
+    
+    if (-not $cipherFound) {
+        Write-Result "No compatible SSL ciphers are enabled for iPXE" -LogLevel 3
+        Write-Result "   - Recommended: Enable $($cipherNames[0]) for proper iPXE operation" -LogLevel 2
     }
 }
 catch {
-    Write-Result "Unable to check SSL Cipher status" -LogLevel 2
+    Write-Result "Unable to check SSL Cipher status: $_" -LogLevel 2
 }
 
 
