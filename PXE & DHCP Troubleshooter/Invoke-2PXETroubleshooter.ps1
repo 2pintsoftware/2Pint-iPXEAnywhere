@@ -61,17 +61,14 @@ Function Write-Result {
 
 #Get what process is listnening on specified ports for http.sys
 $netshResult = Invoke-Command { netsh http show servicestate view=requestq verbose=no }
-[string[]]$netshblocks = [regex]::Split($netshResult, 'Request queue name: Request queue is unnamed.     Version: 2.0')
-
-$procID = "Process IDs:"
-$URLGroups = "URL groups:"
+[string[]]$netshblocks = [regex]::Split($netshResult, 'Request queue name:\s+Request queue is unnamed\.\s+Version:\s+2\.0')
 
 $2PXEChecks = $false
 $2PXEPortChecks = $false
 $2PXEStartTime = $null
 try {
     $2PXEService = Get-Service -Name "2PXE" -ErrorAction Stop
-    $2PXEStartTime = $2pxeProcess.StartTime
+    $2PXEStartTime = $2PXEService.StartTime
     Write-Result "2PXE Service Installed"
     if ($2PXEService.StartType -eq "Automatic") {
         Write-Result "   - 2PXE Startype = Automatic"
@@ -146,17 +143,21 @@ if ($2PXEPortChecks) {
     }
 
     #Get process from http.sys - find what HTTPS ports the 2PXE service is listening on
-    $port8050Process = $null
     $2pxeProcess = Get-Process -Name "2Pint.2pxe.Service" -ErrorAction SilentlyContinue
+    $2pxeHttpsPorts = @()
     if ($2pxeProcess) {
-        $port8050Process = $2pxeProcess
-        $2pxeHttpsPorts = @()
         foreach ($block in $netshblocks) {
             if ($block -match "HTTPS://") {
-                $pidMatch = [regex]::Match($block, "$procID(.*?)$URLGroups")
-                if ($pidMatch.Success -and $pidMatch.Groups[1].Value.Trim() -eq $2pxeProcess.Id.ToString()) {
-                    $urlMatch = [regex]::Match($block, 'HTTPS://[^/]+:(\d+)/')
-                    if ($urlMatch.Success) { $2pxeHttpsPorts += $urlMatch.Groups[1].Value }
+                # Extract process ID from the Processes section
+                $pidMatch = [regex]::Match($block, 'ID:\s+(\d+),\s+image:.*?2Pint\.2pxe\.Service')
+                # Extract all HTTPS URLs from Registered URLs section
+                $urlMatches = [regex]::Matches($block, 'HTTPS://[^/]+:(\d+)/')
+                
+                # If we found our process ID and our URLs exist, extract the ports
+                if ($pidMatch.Success -and $urlMatches.Count -gt 0) {
+                    foreach ($urlMatch in $urlMatches) {
+                        $2pxeHttpsPorts += $urlMatch.Groups[1].Value
+                    }
                 }
             }
         }
@@ -274,7 +275,7 @@ $iPXEPortChecks = $false
 $iPXEStartTime = $null
 try {
     $iPXEService = Get-Service -Name "iPXEWS" -ErrorAction Stop
-    $iPXEStartTime = $iPXEProcess.StartTime
+    $iPXEStartTime = $iPXEService.StartTime
     Write-Result "iPXE WS Service Installed"
     if ($iPXEService.StartType -eq "Automatic") {
         Write-Result "   - iPXE WS Startype = Automatic"
@@ -320,10 +321,16 @@ if ($iPXEPortChecks) {
     if ($iPXEProcess) {
         foreach ($block in $netshblocks) {
             if ($block -match "HTTPS://") {
-                $pidMatch = [regex]::Match($block, "$procID(.*?)$URLGroups")
-                if ($pidMatch.Success -and $pidMatch.Groups[1].Value.Trim() -eq $iPXEProcess.Id.ToString()) {
-                    $urlMatch = [regex]::Match($block, 'HTTPS://[^/]+:(\d+)/')
-                    if ($urlMatch.Success) { $iPXEHttpsPorts += $urlMatch.Groups[1].Value }
+                # Extract process ID from the Processes section
+                $pidMatch = [regex]::Match($block, 'ID:\s+(\d+),\s+image:.*?iPXEAnywhere\.Service')
+                # Extract all HTTPS URLs from Registered URLs section
+                $urlMatches = [regex]::Matches($block, 'HTTPS://[^/]+:(\d+)/')
+                
+                # If we found our process ID and our URLs exist, extract the ports
+                if ($pidMatch.Success -and $urlMatches.Count -gt 0) {
+                    foreach ($urlMatch in $urlMatches) {
+                        $iPXEHttpsPorts += $urlMatch.Groups[1].Value
+                    }
                 }
             }
         }
