@@ -44,7 +44,6 @@ else{
 [string]$winpeshl = @"
 [LaunchApps]
 %SYSTEMDRIVE%\sms\bin\$architecture\TsProgressUI.exe,/register:winpe
-%windir%\system32\Cmd.exe
 %windir%\system32\iPXEWinPEClient.exe,/NetworkInit
 %windir%\system32\iPXEWinPEClient.exe,/SkipNetworkInit
 %SYSTEMDRIVE%\sms\bin\$architecture\TsBootShell.exe
