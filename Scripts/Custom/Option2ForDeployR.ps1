@@ -28,13 +28,11 @@ $menu = @"
 set 2pxeserver $2pxeserver || shell
 set deployrserver $deployrserver || shell
 $paramdata
-initrd --name wimboot `${2pxeserver}wimboot.x86_64.efi##params=paramdata wimboot || shell
+kernel `${2pxeserver}wimboot.x86_64.efi gui || shell
 initrd --name BCD `${deployrserver}BCD BCD || shell
 initrd --name boot.wim `${deployrserver}winpe_amd64.wim boot.wim || shell
-kernel wimboot gui || shell
 boot || shell
 
 "@
-
 
 return $menu
