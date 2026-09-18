@@ -28,6 +28,7 @@
   Purpose/Change: Initial script development
     - 2024-06-26 - Updated to check for any HTTPS ports the services are listening on instead of just default ports
                  - Verify SSL certificates bound to 2PXE/iPXE HTTPS ports and their trust chain to the 2Pint root certificate
+    - 2026-09-11 DP - updated for 2PXE and iPXE WS 4.x
 
 .EXAMPLE
     Invoke-2PXETroubleshooter.ps1
@@ -98,7 +99,7 @@ if ($2PXEPortChecks) {
         $udpEndpoint67 = Get-NetUDPEndpoint -LocalPort 67 -ErrorAction Stop
         [array]$port67 = Get-Process -Id $udpEndpoint67.OwningProcess
         foreach ($port in $port67) {
-            if ($port.Name -eq "2Pint.2pxe.Service") {
+            if ($port.Name -in "2Pint.2pxe.Service","TwoPint.TwoPxe.Service") {
                 Write-Result "   - 2PXE Service listening on port 67"
             }
             else {
@@ -114,7 +115,7 @@ if ($2PXEPortChecks) {
         $udpEndpoint69 = Get-NetUDPEndpoint -LocalPort 69 -ErrorAction Stop
         [array]$port69 = Get-Process -Id $udpEndpoint69.OwningProcess
         foreach ($port in $port69) {
-            if ($port.Name -eq "2Pint.2pxe.Service") {
+            if ($port.Name -in "2Pint.2pxe.Service","TwoPint.TwoPxe.Service") {
                 Write-Result "   - 2PXE Service listening on port 69"
             }
             else {
@@ -130,7 +131,7 @@ if ($2PXEPortChecks) {
         $udpEndpoint4011 = Get-NetUDPEndpoint -LocalPort 4011 -ErrorAction Stop
         [array]$port4011 = Get-Process -Id $udpEndpoint4011.OwningProcess
         foreach ($port in $port4011) {
-            if ($port.Name -eq "2Pint.2pxe.Service") {
+            if ($port.Name -in "2Pint.2pxe.Service","TwoPint.TwoPxe.Service") {
                 Write-Result "   - 2PXE Service listening on port 4011"
             }
             else {
@@ -143,7 +144,7 @@ if ($2PXEPortChecks) {
     }
 
     #Get process from http.sys - find what HTTPS ports the 2PXE service is listening on
-    $2pxeProcess = Get-Process -Name "2Pint.2pxe.Service" -ErrorAction SilentlyContinue
+    $2pxeProcess = Get-Process -Name "2Pint.2pxe.Service","TwoPint.TwoPxe.Service" -ErrorAction SilentlyContinue
     $2pxeHttpsPorts = @()
     if ($2pxeProcess) {
         foreach ($block in $netshblocks) {
@@ -185,7 +186,7 @@ if ($2PXEPortChecks) {
 
 if ($2PXEChecks) {
     # Check if the 2PintSoftware.com root certificate is in the Trusted Root store
-    $2PintRootCert = Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object { $_.Issuer -match "2PintSoftware\.com" }
+    $2PintRootCert = Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object { $_.Issuer -match "2PintSoftware\.com" -or $_.Issuer -match "2Pint iPXE Root CA"}
     if ($2PintRootCert) {
         Write-Result "   - 2Pint root certificate found in Trusted Root store (Thumbprint: $($2PintRootCert.Thumbprint))"
         Write-Result "   - Certificate Name: $($2PintRootCert.Subject), Expiration: $($2PintRootCert.NotAfter)"
@@ -316,7 +317,7 @@ if ($iPXEPortChecks) {
     }
 
     #Get process from http.sys - find what HTTPS ports the iPXE WS service is listening on
-    $iPXEProcess = Get-Process -Name "iPXEAnywhere.Service" -ErrorAction SilentlyContinue
+    $iPXEProcess = Get-Process -Name "iPXEAnywhere.Service","TwoPint.iPXEAnywhere.Service" -ErrorAction SilentlyContinue
     $iPXEHttpsPorts = @()
     if ($iPXEProcess) {
         foreach ($block in $netshblocks) {
@@ -360,7 +361,7 @@ if ($iPXEPortChecks) {
 
     # Check if the 2PintSoftware.com root certificate is available for iPXE trust verification
     if (-not $2PintRootCert) {
-        $2PintRootCert = Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object { $_.Issuer -match "2PintSoftware\.com" }
+        $2PintRootCert = Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object { $_.Issuer -match "2PintSoftware\.com" -or $_.Issuer -match "2Pint iPXE Root CA" }
     }
 
     # Verify SSL certificates bound to iPXE HTTPS port(s)
